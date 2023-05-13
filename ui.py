@@ -2,26 +2,41 @@ import sys
 import norpac
 import pygame
 import pickle
-import tftest
-import newnn as neuralnet
+import old.newnn as neuralnet
 import random
+
+import pytorchnetworks
 from pytorchnetworks import NeuralNetwork
 import numpy
 from datetime import datetime
 from pygame.locals import *
 import copy
+import os
+import torch
 
 pygame.init()
+device = ("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+print(f"Using {device} device")
 
 fps = 60
 fpsClock = pygame.time.Clock()
 
+# feel free to change this to any checkpoint you want
+with open(os.path.join(os.path.dirname(__file__), "good-checkpoints/testcheckpoint2-dueling.tar"), 'rb') as f:
+    activeNetwork = torch.load(f, map_location=device)
 
+# watch the AI or play?
+PLAYER_IN_GAME = True
 
+# the fourth player to replace the user
+with open(os.path.join(os.path.dirname(__file__), "good-checkpoints/2023-05-10-111231-DQN-pytorch-generation20.pkl"), 'rb') as f:
+    otherBozo = pickle.load(f)
 
 pygame.font.init()
 
-# sorry if you don't have this font lol its on google fonts
+# sorry if you don't have this font lol its on google fonts.
+# TODO: use a default font or something
+# for windows
 # light_font = pygame.font.SysFont("Mulish ExtraLight", 20)
 # my_font = pygame.font.SysFont("Mulish ExtraLight", 20, bold=True)
 #
@@ -35,13 +50,14 @@ my_font = pygame.font.SysFont("Mulish", 20, bold=True)
 
 small_font = pygame.font.SysFont("Mulish", 12)
 small_bold = pygame.font.SysFont("Mulish", 12, bold=True)
+# because my laptop screen is tiny small
 width, height = 1595, 800
 
 screen = pygame.display.set_mode((width, height))
 
 imp = pygame.image.load("board.jpg").convert()
 
-colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]
+colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255), (0, 255, 255)]
 player_colors = {}
 
 backupnum = 1
@@ -79,22 +95,19 @@ cityCoords = {
     "Fargo": (1141, 173),
     "Minneapolis": (1318, 254), }
 
-humanMoves = []
+# humanMoves = []
 
 game = None
 player = None
-
-# with open("2023-05-07-172642-DQN-newnn-generation160.pkl", 'rb') as f:  # open a text file
-#     activeNetwork = pickle.load(f)
-
-with open("2023-05-09-205035-DQN-pytorch-generation100.pkl", 'rb') as f:  # open a text file
-    activeNetwork = pickle.load(f)
 
 gameLog = []
 
 timestamp = datetime.now().strftime('%Y-%m-%d-%H%M%S')
 
 newGame = True
+
+distribAI = copy.deepcopy(activeNetwork)
+top5RandomAI = copy.deepcopy(activeNetwork)
 
 # Game loop.
 while True:
@@ -107,8 +120,11 @@ while True:
         player = norpac.Player()
 
         # nns = random.sample(population, 2)
-        nns = [copy.deepcopy(activeNetwork), NeuralNetwork(greedy=True), activeNetwork, copy.deepcopy(activeNetwork)]
-        # game.players.append(player)
+        nns = [distribAI, top5RandomAI, activeNetwork]
+        if PLAYER_IN_GAME:
+            game.players.append(player)
+        else:
+            nns.append(otherBozo)
         for n in nns:
             game.players.append(norpac.Player(n))
 
@@ -132,8 +148,7 @@ while True:
                 continue
 
             city = game.findCity(clicked_city[0])
-            n = ((game.cities.index(city) - 1) * 2) + 50
-            gameState = sampleNN.createInput(game)
+            n = ((game.cities.index(city) + 1) * 2) + 50
             if event.button == 3:  # if odd i.e. big cube
                 if not player.hasBig():
                     continue
@@ -149,7 +164,6 @@ while True:
                     continue
             game.currentPlayer = game.playerOrder[
                 (game.playerOrder.index(game.currentPlayer) + 1) % len(game.playerOrder)]
-            humanMoves.append((gameState, n))
             gameLog.append("Player: " + neuralnet.readOutput(n))
 
         elif event.type == pygame.KEYDOWN:
@@ -162,17 +176,39 @@ while True:
                 game.clearGame()
                 game.roundNumber += 1
                 continue
-            elif event.key == pygame.K_s:
-                # save stuff
-                filename = f"{timestamp}humanmoves-backup{backupnum}.pkl"
-                with open(filename, 'wb') as f:  # open a text file
-                    pickle.dump(humanMoves, f)  # serialize the list
-                    print(f"Saved human moves to {filename}")
-                pass
+            # elif event.key == pygame.K_s:
+            #     # save stuff
+            #     filename = f"{timestamp}humanmoves-backup{backupnum}.pkl"
+            #     with open(filename, 'wb') as f:  # open a text file
+            #         pickle.dump(humanMoves, f)  # serialize the list
+            #         print(f"Saved human moves to {filename}")
+            #     pass
             elif event.key == pygame.K_RETURN and game.currentPlayer != player:
                 nn = game.currentPlayer.nn
                 out = nn.output(nn.createInput(game))
-                log = str(game.currentPlayer)[-4:-1]+" "+nn.doAction(game, out)
+
+                if nn == top5RandomAI:
+                    sortedout = out.argsort().tolist()[::-1]
+                    legalMoves = pytorchnetworks.allLegal(top5RandomAI, game)
+                    sortedLegals = [it for it in sortedout if it in legalMoves]
+                    choice = random.choice(sortedLegals[0:min(5, len(sortedLegals))])
+                    log = nn.doSingleAction(game, choice)
+                elif nn == distribAI:
+                    legalMoves = pytorchnetworks.allLegal(distribAI, game)
+                    # first zero out any non-legal moves
+                    weights = [(float(v)) if i in legalMoves else 0 for i, v in enumerate(out)]
+                    # new baseline for zero is the lowest legal action not lowest overall action
+                    zero = min(weights)
+                    weights = [(it + abs(zero)) ** 2 if it != 0 else 0 for it in weights]
+                    if sum(weights) == 0:
+                        log = nn.doSingleAction(game, random.choice(legalMoves))
+                    else:
+                        choice = random.choices(list(range(0, 100)), weights=weights, k=1)[0]
+                        log = nn.doSingleAction(game, choice)
+                else:
+                    log = nn.doAction(game, out)
+
+                log = str(game.currentPlayer)[-4:-1]+" "+log
                 game.currentPlayer = game.playerOrder[
                     (game.playerOrder.index(game.currentPlayer) + 1) % len(game.playerOrder)]
                 gameLog.append(log)
@@ -182,7 +218,7 @@ while True:
                     continue
                 city = game.currentCity.connections[int(pygame.key.name(event.key))-1]
                 if city not in list(sum(game.trains, ())):
-                    gameState = sampleNN.createInput(game)
+                    # gameState = pytorchnetworks.createInput(game)
                     if city != "Seattle":
                         n = norpac.allConnections.index((game.currentCity.name, city))
                     else:
@@ -190,7 +226,7 @@ while True:
                     game.currentCity.connect(city)
                     game.currentPlayer = game.playerOrder[
                         (game.playerOrder.index(game.currentPlayer) + 1) % len(game.playerOrder)]
-                    humanMoves.append((gameState, n))
+                    # humanMoves.append((gameState, n))
                     gameLog.append("Player: " + neuralnet.readOutput(n))
 
 
@@ -212,6 +248,10 @@ while True:
             st += "Random "
         elif p.nn.greedy:
             st += "Greedy "
+        elif p.nn == distribAI:
+            st += "Distrib. "
+        elif p.nn == top5RandomAI:
+            st += "Top5Rnd. "
         else:
             st += "Bozo "
         st += str(p)[-4:-1] + ": "

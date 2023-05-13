@@ -50,6 +50,10 @@ perfectWinRates = collections.deque(maxlen=5)
 
 actingNetwork = DuelingNetwork().to(device)
 
+# feel free to use this instead with the relevant file to resume training:
+# with open(os.path.join(os.path.dirname(__file__), "checkpoints/my-checkpoint"), 'rb') as f:
+#     actingNetwork = torch.load(f)
+
 # older AIs for baseline comparison
 laggingAis = collections.deque(maxlen=20)
 
@@ -187,7 +191,7 @@ def newTest():
                         legalMoves = pytorchnetworks.allLegal(top5RandomAI, game)
                         sortedLegals = [it for it in sortedout if it in legalMoves]
                         choice = random.choice(sortedLegals[0:min(5, len(sortedLegals))])
-                        nn.doSingleAction(game, choice)
+                        log = nn.doSingleAction(game, choice)
                     elif nn == distribAI:
                         legalMoves = pytorchnetworks.allLegal(distribAI, game)
                         # first zero out any non-legal moves
@@ -196,10 +200,10 @@ def newTest():
                         zero = min(weights)
                         weights = [(it + abs(zero))**2 if it != 0 else 0 for it in weights]
                         if sum(weights) == 0:
-                            nn.doSingleAction(game, random.choice(legalMoves))
+                            log = nn.doSingleAction(game, random.choice(legalMoves))
                         else:
                             choice = random.choices(list(range(0, 100)), weights=weights, k=1)[0]
-                            nn.doSingleAction(game, choice)
+                            log = nn.doSingleAction(game, choice)
                     else:
                         log = nn.doAction(game, out)
 
