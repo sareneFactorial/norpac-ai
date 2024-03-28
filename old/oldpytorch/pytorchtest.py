@@ -9,7 +9,7 @@ import numpy as np
 import copy
 import pickle
 import pytorchnetworks
-from pytorchnetworks import NeuralNetwork, DuelingNetwork
+from pytorchnetworks import NeuralNetwork
 import cProfile
 import os
 
@@ -48,11 +48,11 @@ distribWinRates = collections.deque(maxlen=5)
 top5RandomWinRates = collections.deque(maxlen=5)
 perfectWinRates = collections.deque(maxlen=5)
 
-actingNetwork = DuelingNetwork().to(device)
+# actingNetwork = DuelingNetwork().to(device)
 
 # feel free to use this instead with the relevant file to resume training:
-# with open(os.path.join(os.path.dirname(__file__), "checkpoints/my-checkpoint"), 'rb') as f:
-#     actingNetwork = torch.load(f)
+with open(os.path.join(os.path.dirname(__file__), "good-checkpoints/2023-05-13-062509-DQN-dueling-cuda-generation1000.pkl"), 'rb') as f:
+    actingNetwork = torch.load(f, map_location=device)
 
 # older AIs for baseline comparison
 laggingAis = collections.deque(maxlen=20)

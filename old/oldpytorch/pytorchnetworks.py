@@ -167,8 +167,6 @@ def firstLegal(theAi, game, weights):
                 return i
 
 
-# TODO: decouple the weights from this and make it just return false if it's illegal
-# TODO: make greedy/random players their own class without the NN stuff, remove from here
 def doAction(self, game, weights, loud=False, weightsAreActions=False):
     if weightsAreActions:
         sortedout = weights

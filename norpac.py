@@ -81,7 +81,7 @@ class NorpacGame:
         elif playerCount == 6:
             n = 4
         else:
-            raise Exception("player count out of range! 2 <= playercount <= 6")
+            raise Exception("player count out of range! 3 <= playercount <= 6")
 
         self.cities.append(City(self, "Seattle", [], 0))
         self.cities.append(City(self, "Vancouver", ["Seattle"], n))
@@ -149,14 +149,86 @@ class NorpacGame:
         visitable = self.treeSearch(self.currentCity.name, [])
         return [it for it in self.cities if it.name not in visitable]
 
-
     def treeSearch(self, city, visited):
+        """ Gets a list of all cities reachable from this city, assuming empty connections. """
         visited.append(city)
         for i in self.findCity(city).connections:
             if i not in visited:
                 self.treeSearch(i, visited)
         return visited
 
+    def allLegalMoves(self, player):
+        legalMoves = []
+        for i in range(0, 100):
+            if i < 50:
+                if self.currentCity.name == allConnections[i][0]:
+                    if (allConnections[i][1], allConnections[i][0]) in self.trains:  # if double connection taken
+                        continue
+                    legalMoves.append(i)
+                    continue
+            elif i < 96:
+                j = (i - 50) // 2
+                city = self.cities[j - 1]
+                if len(city.cubes) >= city.size:  # if city full
+                    continue
+                if len(player.cubes) <= 0:  # if ai have no cube :(
+                    continue
+                if city.name in list(sum(self.trains, ())):  # city connected to!! already
+                    continue
+
+                if i % 2 == 1:  # if odd i.e. big cube
+                    if not player.hasBig():
+                        continue
+                    legalMoves.append(i)
+                    continue
+                # if even i.e. small cube
+                if player.howManySmall() > 0:
+                    legalMoves.append(i)
+                    continue
+                else:
+                    continue
+            else:
+                n = i - 96
+                if self.currentCity.name == seattleConnections[n][0]:
+                    legalMoves.append(i)
+                    continue
+
+    # see action numbers at bottom of this file
+    def doAction(self, player, actionNumber, extraText=""):
+        """ Does an action. Returns a new object of the state of the game. Extratext gets added to the end of logs.
+        Does not check for illegality."""
+        i = actionNumber
+        if i < 50:
+            if self.currentCity.name == allConnections[i][0]:
+                self.currentCity.connect(allConnections[i][1])
+                return f"connected {allConnections[i][0]} to {allConnections[i][1]}" + extraText
+            else:
+                raise Exception("invalid move!")
+        elif i < 96:
+            j = (i - 50) // 2
+            city = self.cities[j - 1]
+            # if city full, player has no cubes, or city is already connected to
+            if len(city.cubes) >= city.size or len(player.cubes) <= 0 or city.name in list(sum(self.trains, ())):
+                raise Exception("invalid move")
+            if i % 2 == 1:  # if odd i.e. big cube
+                if not player.hasBig():
+                    raise Exception("invalid move!!")
+                city.cubes.append(Cube(player, True))
+                player.spendBig()
+                return f"placed big cube on {city.name}" + extraText
+            # if even i.e. small cube
+            if player.howManySmall() > 0:
+                city.cubes.append(Cube(player, False))
+                player.spendSmall()
+                return f"placed small cube on {city.name}" + extraText
+            else:
+                raise Exception("invalid move")
+        else:
+            n = i - 96
+            if self.currentCity.name == seattleConnections[n][0]:
+                self.currentCity.connect(seattleConnections[n][1])
+                return f"connected {seattleConnections[n][0]} to Seattle!!!" + extraText
+        raise Exception(f"invalid move number {i}")
 
 
 class City:
@@ -175,7 +247,6 @@ class City:
                 cube.owner.getCube(1, True)
                 self.game.lastScore[cube.owner] += 1
         self.cubes.clear()
-
 
     def connect(self, destination: str):
         city = self.game.findCity(destination)
@@ -218,3 +289,106 @@ class Cube:
     def __init__(self, owner: Player, big: bool):
         self.owner = owner
         self.big = big
+
+# ACTION NUMBERS
+
+# 0: Conn Oroville to Vancouver
+# 1: Conn Richland to Portland
+# 2: Conn Spokane to Oroville
+# 3: Conn Spokane to Richland
+# 4: Conn Bonner's Ferry to Oroville
+# 5: Conn Bonner's Ferry to Spokane
+# 6: Conn Lewiston to Richland
+# 7: Conn Lewiston to Spokane
+# 8: Conn Shelby to Bonner's Ferry
+# 9: Conn Shelby to Lewiston
+# 10: Conn Shelby to Great Falls
+# 11: Conn Butte to Great Falls
+# 12: Conn Butte to Lewiston
+# 13: Conn Great Falls to Shelby
+# 14: Conn Great Falls to Butte
+# 15: Conn Great Falls to Lewiston
+# 16: Conn Chinook to Shelby
+# 17: Conn Chinook to Great Falls
+# 18: Conn Glasgow to Chinook
+# 19: Conn Glasgow to Great Falls
+# 20: Conn Glasgow to Terry
+# 21: Conn Terry to Glasgow
+# 22: Conn Terry to Great Falls
+# 23: Conn Terry to Billings
+# 24: Conn Billings to Great Falls
+# 25: Conn Billings to Butte
+# 26: Conn Casper to Billings
+# 27: Conn Casper to Butte
+# 28: Conn Rapid City to Terry
+# 29: Conn Rapid City to Billings
+# 30: Conn Rapid City to Casper
+# 31: Conn Minot to Terry
+# 32: Conn Minot to Glasgow
+# 33: Conn Bismarck to Terry
+# 34: Conn Bismarck to Minot
+# 35: Conn Aberdeen to Bismarck
+# 36: Conn Aberdeen to Rapid City
+# 37: Conn Sioux Falls to Aberdeen
+# 38: Conn Sioux Falls to Rapid City
+# 39: Conn Grand Forks to Minot
+# 40: Conn Grand Forks to Fargo
+# 41: Conn Duluth to Grand Forks
+# 42: Conn Duluth to Fargo
+# 43: Conn Fargo to Grand Forks
+# 44: Conn Fargo to Minot
+# 45: Conn Fargo to Bismarck
+# 46: Conn Minneapolis to Duluth
+# 47: Conn Minneapolis to Fargo
+# 48: Conn Minneapolis to Aberdeen
+# 49: Conn Minneapolis to Sioux Falls
+# 50: Small cube on Minneapolis
+# 51: Big cube on Minneapolis
+# 52: Small cube on Seattle
+# 53: Big cube on Seattle
+# 54: Small cube on Vancouver
+# 55: Big cube on Vancouver
+# 56: Small cube on Portland
+# 57: Big cube on Portland
+# 58: Small cube on Oroville
+# 59: Big cube on Oroville
+# 60: Small cube on Richland
+# 61: Big cube on Richland
+# 62: Small cube on Spokane
+# 63: Big cube on Spokane
+# 64: Small cube on Bonner's Ferry
+# 65: Big cube on Bonner's Ferry
+# 66: Small cube on Lewiston
+# 67: Big cube on Lewiston
+# 68: Small cube on Shelby
+# 69: Big cube on Shelby
+# 70: Small cube on Butte
+# 71: Big cube on Butte
+# 72: Small cube on Great Falls
+# 73: Big cube on Great Falls
+# 74: Small cube on Chinook
+# 75: Big cube on Chinook
+# 76: Small cube on Glasgow
+# 77: Big cube on Glasgow
+# 78: Small cube on Terry
+# 79: Big cube on Terry
+# 80: Small cube on Billings
+# 81: Big cube on Billings
+# 82: Small cube on Casper
+# 83: Big cube on Casper
+# 84: Small cube on Rapid City
+# 85: Big cube on Rapid City
+# 86: Small cube on Minot
+# 87: Big cube on Minot
+# 88: Small cube on Bismarck
+# 89: Big cube on Bismarck
+# 90: Small cube on Aberdeen
+# 91: Big cube on Aberdeen
+# 92: Small cube on Sioux Falls
+# 93: Big cube on Sioux Falls
+# 94: Small cube on Grand Forks
+# 95: Big cube on Grand Forks
+# 96: Connect Vancouver to Seattle!!!
+# 97: Connect Oroville to Seattle!!!
+# 98: Connect Richland to Seattle!!!
+# 99: Connect Portland to Seattle!!!
