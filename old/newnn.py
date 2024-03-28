@@ -61,7 +61,6 @@ def d_huberLoss(val, target):
     return np.where(abs(x) <= SIGMA, (val - target), SIGMA * (np.sign(x)))
 
 
-
 def hotOne(h, n):
     return [1 if i == h else 0 for i in range(0, n)]
 
@@ -140,148 +139,6 @@ class NeuralNet:
             self.syn[i] = self.syn[i] + (np.random.random(self.syn[i].shape) * factor)
         return self
 
-    # TODO: decouple these functions from the NN class
-    def createInput(self, game: norpac.NorpacGame):
-        a = []
-        cities = game.cities[1:len(game.cities) - 1]
-        for i in cities:
-            for j in i.cubes + [None] * (4 - len(i.cubes)):
-                if j is None:
-                    a.extend([0, 0] * 6)
-                    continue
-                for k in game.players + [None] * (6 - len(game.players)):
-                    if k is None or j.owner != k:
-                        a.extend([0, 0])
-                        continue
-                    a.extend(hotOne(1 if j.big else 0, 2))
-        for i in norpac.allConnections:
-            a.append(1 if i in game.trains else 0)
-        for i in game.players + [None] * (6 - len(game.players)):
-            if i is None:
-                a.extend([0] * 6)
-                continue
-            a.extend(hotOne(game.playerOrder.index(i), 6))
-        for i in game.players + [None] * (6 - len(game.players)):
-            if i is None:
-                a.extend([0, 0])
-                continue
-            n = i.howManySmall()
-            a.append(n/20)
-            for j in i.cubes:
-                if j.big:
-                    a.append(1)
-                    break
-            else:
-                a.append(0)
-        for i in game.players + [None] * (6 - len(game.players)):
-            if i is None or i.nn != self:
-                a.append(0)
-                continue
-            a.append(1)
-        for i in game.players + [None] * (6 - len(game.players)):
-            if i is None:
-                a.append(0)
-                continue
-            a.append(i.points / 20)
-        a.extend(hotOne(game.roundNumber, 3))
-
-        if len(a) != self.shape[0]:
-            print("AAAAAAAAAAAA input length is messed up")
-            print(len(a))
-            raise Exception("input length is messed up idk why")
-        return a
-
-    # TODO: decouple game logic from NN, place into game
-    def doAction(self, game, weights, loud=False):
-        sortedout = weights.argsort().tolist()[::-1]
-        if self.random:
-            random.shuffle(sortedout)
-        ai = game.findAI(self)
-        if self.greedy:  # TODO: decouple greedy game logic
-            for i in game.currentCity.connections:
-
-                if game.findAI(self) in [x.owner for x in game.findCity(i).cubes]:
-                    st = "connected " + game.currentCity.name + " to " + i + " GREEDILY!"
-                    game.currentCity.connect(i)
-                    if loud: print(st)
-                    return st
-            for i in game.cities:
-                if i.name in ["Minneapolis", "Seattle"]:
-                    continue
-                if len(ai.cubes) > 0 and 0 < len(i.cubes) < i.size and self not in list(set([x.owner for x in i.cubes])) and i not in game.getUnvisitableCities():
-                    if ai.hasBig():
-                        i.cubes.append(norpac.Cube(ai, True))
-                        ai.spendBig()
-                        if loud: print("placed big cube on " + i.name + " with GREED.")
-                        return "placed big cube on " + i.name + " with GREED."
-                    if ai.howManySmall() > 0:
-                        i.cubes.append(norpac.Cube(ai, False))
-                        ai.spendSmall()
-                        if loud: print("placed small cube on " + i.name + " with GREED.")
-                        return "placed small cube on " + i.name + " with GREED."
-
-            cIndexShuffled = list(range(0, len(game.cities)))
-            random.shuffle(cIndexShuffled)
-            for i in cIndexShuffled:
-                if game.cities[i].name in ["Minneapolis", "Seattle"]:
-                    continue
-                if len(ai.cubes) > 0 and 0 < len(game.cities[i].cubes) < game.cities[i].size and game.cities[i] not in game.getUnvisitableCities():
-                    if ai.hasBig():
-                        game.cities[i].cubes.append(norpac.Cube(ai, True))
-                        ai.spendBig()
-                        if loud: print("placed big cube on " + game.cities[i].name + " with GREED.")
-                        return "placed big cube on " + game.cities[i].name + " with GREED."
-                    if ai.howManySmall() > 0:
-                        game.cities[i].cubes.append(norpac.Cube(ai, False))
-                        ai.spendSmall()
-                        if loud: print("placed small cube on " + game.cities[i].name + " with GREED.")
-                        return "placed small cube on " + game.cities[i].name + " with GREED."
-            random.shuffle(weights)
-
-        for i in sortedout:
-            if self.greedy:
-                weights[i] = -99.0
-            if i < 50:
-                if game.currentCity.name == norpac.allConnections[i][0]:
-                    if (norpac.allConnections[i][1], norpac.allConnections[i][0]) in game.trains:  # if double connection taken
-                        continue
-                    game.currentCity.connect(norpac.allConnections[i][1])
-                    if loud: print(f"connected {norpac.allConnections[i][0]} to {norpac.allConnections[i][1]} with confidence {weights[i]:2f}")
-                    return f"connected {norpac.allConnections[i][0]} to {norpac.allConnections[i][1]} with confidence {weights[i]:2f}"
-            elif i < 96:
-                j = (i - 50) // 2
-                city = game.cities[j - 1]
-                if len(city.cubes) >= city.size:  # if city full
-                    continue
-                if len(ai.cubes) <= 0:  # if ai have no cube :(
-                    continue
-                if city.name in list(sum(game.trains, ())):  # city connected to!! already
-                    continue
-
-                if i % 2 == 1:  # if odd i.e. big cube
-                    if not ai.hasBig():
-                        continue
-                    city.cubes.append(norpac.Cube(ai, True))
-                    ai.spendBig()
-                    if loud: print("placed big cube on " + city.name + " with confidence " + str(weights[i]))
-                    return f"placed big cube on {city.name} with confidence {weights[i]:.2f}"
-                # if even i.e. small cube
-                if ai.howManySmall() > 0:
-                    city.cubes.append(norpac.Cube(ai, False))
-                    ai.spendSmall()
-                    if loud: print("placed small cube on " + city.name + " with confidence " + str(weights[i]))
-                    return f"placed small cube on {city.name} with confidence {weights[i]:.2f}"
-                else:
-                    continue
-            else:
-                n = i - 96
-                if game.currentCity.name == norpac.seattleConnections[n][0]:
-                    game.currentCity.connect(norpac.seattleConnections[n][1])
-                    if loud: print(
-                        f"connected {norpac.seattleConnections[n][0]} to Seattle!!! with confidence {weights[i]:.2f}")
-                    return f"connected {norpac.seattleConnections[n][0]} to Seattle!!! with confidence {weights[i]:.2f}"
-        raise Exception(f"should not get here. value: {i}")
-
     def firstLegal(self, game, weights):
         sortedout = weights.argsort().tolist()[::-1]
         ai = game.findAI(self)
@@ -315,43 +172,11 @@ class NeuralNet:
                 if game.currentCity.name == norpac.seattleConnections[n][0]:
                     return i
 
-    # TODO: make this code not just copy pasted
+    # deprecated
+    # TODO: move all usages to game.allLegalMoves
     def allLegalMoves(self, game):
         ai = game.findAI(self)
-        legalMoves = []
-        for i in range(0, 100):
-            if i < 50:
-                if game.currentCity.name == norpac.allConnections[i][0]:
-                    if (norpac.allConnections[i][1], norpac.allConnections[i][0]) in game.trains:  # if double connection taken
-                        continue
-                    legalMoves.append(i)
-                    continue
-            elif i < 96:
-                j = (i - 50) // 2
-                city = game.cities[j - 1]
-                if len(city.cubes) >= city.size:  # if city full
-                    continue
-                if len(ai.cubes) <= 0:  # if ai have no cube :(
-                    continue
-                if city.name in list(sum(game.trains, ())):  # city connected to!! already
-                    continue
-
-                if i % 2 == 1:  # if odd i.e. big cube
-                    if not ai.hasBig():
-                        continue
-                    legalMoves.append(i)
-                    continue
-                # if even i.e. small cube
-                if ai.howManySmall() > 0:
-                    legalMoves.append(i)
-                    continue
-                else:
-                    continue
-            else:
-                n = i - 96
-                if game.currentCity.name == norpac.seattleConnections[n][0]:
-                    legalMoves.append(i)
-                    continue
+        return game.allLegalMoves(ai)
 
 
 def readOutput(n):
@@ -371,3 +196,55 @@ def readOutput(n):
     else:
         n = n - 96
         return f"Connect {norpac.seattleConnections[n][0]} to Seattle!!!"
+
+
+def createInput(player, game: norpac.NorpacGame):
+    """Create an input layer for a model."""
+    a = []
+    cities = game.cities[1:len(game.cities) - 1]
+    for i in cities:
+        for j in i.cubes + [None] * (4 - len(i.cubes)):
+            if j is None:
+                a.extend([0, 0] * 6)
+                continue
+            for k in game.players + [None] * (6 - len(game.players)):
+                if k is None or j.owner != k:
+                    a.extend([0, 0])
+                    continue
+                a.extend(hotOne(1 if j.big else 0, 2))
+    for i in norpac.allConnections:
+        a.append(1 if i in game.trains else 0)
+    for i in game.players + [None] * (6 - len(game.players)):
+        if i is None:
+            a.extend([0] * 6)
+            continue
+        a.extend(hotOne(game.playerOrder.index(i), 6))
+    for i in game.players + [None] * (6 - len(game.players)):
+        if i is None:
+            a.extend([0, 0])
+            continue
+        n = i.howManySmall()
+        a.append(n/20)
+        for j in i.cubes:
+            if j.big:
+                a.append(1)
+                break
+        else:
+            a.append(0)
+    for i in game.players + [None] * (6 - len(game.players)):
+        if i is None or i.nn != player:
+            a.append(0)
+            continue
+        a.append(1)
+    for i in game.players + [None] * (6 - len(game.players)):
+        if i is None:
+            a.append(0)
+            continue
+        a.append(i.points / 20)
+    a.extend(hotOne(game.roundNumber, 3))
+
+    if len(a) != player.shape[0]:
+        print("AAAAAAAAAAAA input length is messed up")
+        print(len(a))
+        raise Exception("input length is messed up idk why")
+    return a

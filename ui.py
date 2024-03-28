@@ -5,8 +5,7 @@ import pickle
 import old.newnn as neuralnet
 import random
 
-import pytorchnetworks
-from pytorchnetworks import NeuralNetwork
+from old.oldpytorch import pytorchnetworks
 import numpy
 from datetime import datetime
 from pygame.locals import *
@@ -22,11 +21,11 @@ fps = 60
 fpsClock = pygame.time.Clock()
 
 # feel free to change this to any checkpoint you want
-with open(os.path.join(os.path.dirname(__file__), "good-checkpoints/testcheckpoint2-dueling.tar"), 'rb') as f:
+with open(os.path.join(os.path.dirname(__file__), "good-checkpoints/2023-05-13-062509-DQN-dueling-cuda-generation1000.pkl"), 'rb') as f:
     activeNetwork = torch.load(f, map_location=device)
 
 # watch the AI or play?
-PLAYER_IN_GAME = True
+PLAYER_IN_GAME = False
 
 # the fourth player to replace the user
 with open(os.path.join(os.path.dirname(__file__), "good-checkpoints/2023-05-10-111231-DQN-pytorch-generation20.pkl"), 'rb') as f:
@@ -199,7 +198,7 @@ while True:
                     weights = [(float(v)) if i in legalMoves else 0 for i, v in enumerate(out)]
                     # new baseline for zero is the lowest legal action not lowest overall action
                     zero = min(weights)
-                    weights = [(it + abs(zero)) ** 2 if it != 0 else 0 for it in weights]
+                    weights = [(it + abs(zero)) ** 3 if it != 0 else 0 for it in weights]
                     if sum(weights) == 0:
                         log = nn.doSingleAction(game, random.choice(legalMoves))
                     else:
