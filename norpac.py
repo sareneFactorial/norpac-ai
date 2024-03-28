@@ -195,8 +195,9 @@ class NorpacGame:
 
     # see action numbers at bottom of this file
     def doAction(self, player, actionNumber, extraText=""):
-        """ Does an action. Returns a new object of the state of the game. Extratext gets added to the end of logs.
+        """ Does an action. Returns the logs. Extratext gets added to the end of logs.
         Does not check for illegality."""
+        # TODO: should this return state?
         i = actionNumber
         if i < 50:
             if self.currentCity.name == allConnections[i][0]:
