@@ -1,5 +1,7 @@
 import random
 
+from util import hotOne
+
 allConnections = [('Oroville', 'Vancouver'), ('Richland', 'Portland'), ('Spokane', 'Oroville'), ('Spokane', 'Richland'),
                   ("Bonner's Ferry", 'Oroville'), ("Bonner's Ferry", 'Spokane'), ('Lewiston', 'Richland'),
                   ('Lewiston', 'Spokane'), ('Shelby', "Bonner's Ferry"), ('Shelby', 'Lewiston'),
@@ -231,6 +233,63 @@ class NorpacGame:
                 return f"connected {seattleConnections[n][0]} to Seattle!!!" + extraText
         raise Exception(f"invalid move number {i}")
 
+    def createInput(self, player):
+        """ Creates neural network input for a given player in a given state. """
+        a = []
+        cities = self.cities[1:len(self.cities) - 1]
+        # cubes on each cities and which players own them and which type they are
+        for i in cities:
+            for j in i.cubes + [None] * (4 - len(i.cubes)):
+                if j is None:
+                    a.extend([0, 0] * 6)
+                    continue
+                for k in self.players + [None] * (6 - len(self.players)):
+                    if k is None or j.owner != k:
+                        a.extend([0, 0])
+                        continue
+                    a.extend(hotOne(1 if j.big else 0, 2))
+        # which connections are active
+        for i in allConnections:
+            a.append(1 if i in self.trains else 0)
+        # which player is in which player order spot vector (weird i know but i already coded it)
+        for i in self.players + [None] * (6 - len(self.players)):
+            if i is None:
+                a.extend([0] * 6)
+                continue
+            a.extend(hotOne(self.playerOrder.index(i), 6))
+        # how many cubes of each type
+        for i in self.players + [None] * (6 - len(self.players)):
+            if i is None:
+                a.extend([0, 0])
+                continue
+            n = i.howManySmall()
+            a.append(n / 20)
+            for j in i.cubes:
+                if j.big:
+                    a.append(1)
+                    break
+            else:
+                a.append(0)
+        # Which Player Are You vector
+        for i in self.players + [None] * (6 - len(self.players)):
+            if i is None or i != player:
+                a.append(0)
+                continue
+            a.append(1)
+        # points vector
+        for i in self.players + [None] * (6 - len(self.players)):
+            if i is None:
+                a.append(0)
+                continue
+            a.append(i.points / 20)
+        # round number
+        a.extend(hotOne(self.roundNumber, 3))
+
+        if len(a) != 1217:
+            print("AAAAAAAAAAAA input length is messed up")
+            print(len(a))
+            raise Exception("input length is messed up idk why")
+        return a
 
 class City:
     def __init__(self, game: NorpacGame, name: str, connections, size: int):
