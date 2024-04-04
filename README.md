@@ -1,6 +1,8 @@
 # norpac-ai
 a test neural network for the board game Northern Pacific
 
+NOTE: this is a bit outdated as of april 2024, as i'm working on an alphazero-style mcts network. just run mcts.py and it should start training per parameters but you can't play against it yet
+
 
 # requirements
 ```
