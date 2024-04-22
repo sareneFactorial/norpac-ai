@@ -122,8 +122,9 @@ CITIES = [  # TODO: optimize this to remove string comparison
 # @dataclass
 class Player:
     # TODO: implement Actor
-    def __init__(self):
+    def __init__(self, actor=None):
         self.uuid = random.random()
+        self.actor = actor
 
     # def __hash__(self):
     #     return hash(self.uuid)

@@ -14,12 +14,16 @@ import os
 
 
 import newnorpac
+import actors
 
 EE_CONSTANT = 1
-BUFFER_SIZE = 5000
-NUM_SIM = 300
+BUFFER_SIZE = 10000
+NUM_SIM = 5
 
 LEARN_RATE = 6e-5
+
+GAMES_PER_GEN = 1
+NUM_GENS = 20
 
 checkpointsDir = os.path.join(os.path.dirname(__file__), "checkpoints/")
 
@@ -61,20 +65,12 @@ class Node:
 
 
 class Tree:
-    def __init__(self, game, valueModel, policyModel):
+    def __init__(self, game):
         self.game = game
-        self.valueModel = valueModel
-        self.policyModel = policyModel
-        self.currentRoot = None
+        # self.valueModel = valueModel
+        # self.policyModel = policyModel
 
-    def runSimulations(self, numSimulations, player, root=None):
-        if root is None and self.currentRoot is None:
-            self.currentRoot = Node(0, player, -1, self.game)
-            self.currentRoot.expand(self.policyModel)
-            self.currentRoot.visits += 1
-        if root is None:
-            root = self.currentRoot
-
+    def runSimulations(self, numSimulations, root, valueModel, policyModel):
         for ii in range(numSimulations):
             # if ii % 100 == 0:
             #     print(f"on simulation {ii}")
@@ -97,17 +93,17 @@ class Tree:
                 node = node.children[maxIndex]
                 searchPath.append(node)
 
-            value = self.valueModel.output(node.state.createInput(node.player)).tolist()
+            value = valueModel.output(node.state.createInput(node.player)).tolist()
 
             if node.state.terminalState:
-                    scores = [(i, node.state.points.get(i, 0), node.state.badInvestments.get(i, 0),
-                               node.state.playerOrder.index(i)) for i in node.state.players]
-                    scores.sort(key=lambda a: (
-                        -a[1], a[2], a[3]))  # sort by points (descending) and bad investments (ascending)
-                    winner = scores[0]
-                    value = newnorpac.hotOne(scores.index(winner), 6)
+                scores = [(i, node.state.points.get(i, 0), node.state.badInvestments.get(i, 0),
+                           node.state.playerOrder.index(i)) for i in node.state.players]
+                scores.sort(key=lambda a: (
+                    -a[1], a[2], a[3]))  # sort by points (descending) and bad investments (ascending)
+                winner = scores[0]
+                value = newnorpac.hotOne(scores.index(winner), 6)
             else:
-                node.expand(self.policyModel)
+                node.expand(policyModel)
 
             for n in searchPath:
                 n.value = list(map(add, value, n.value))
@@ -116,8 +112,80 @@ class Tree:
         return root
 
 
+# TODO: move to actors.py
+class MCTSBot:
+    def __init__(self, game, policyModel, valueModel, isTraining=False):
+        self.tree = Tree(game)
+        self.currentNode = Node(-1, self.tree.game.currentPlayer, -1, self.tree.game)
+        self.policyModel = policyModel
+        self.valueModel = valueModel
+
+        self.isTraining = isTraining
+
+        self.nodeHistory = []
+        self.policyTraining = []
+        self.valueTraining = []
+
+    def doAction(self, player: newnorpac.Player, game: newnorpac.NorpacGame) -> tuple[tuple[newnorpac.NorpacGame, str], int]:
+        self.currentNode = self.tree.runSimulations(NUM_SIM, self.currentNode, self.valueModel, self.policyModel)
+        priorDict = {}
+        priorValues = []
+        for child in self.currentNode.children:
+            priorDict[child.actionID] = child.visits
+        for i in range(0, 100):
+            priorValues.append(priorDict.get(i, 0))
+        priorValues = [x / sum(priorValues) for x in priorValues]
+        self.policyTraining.append((self.currentNode.state.createInput(self.currentNode.state.currentPlayer), priorValues))
+        move = numpy.argmax(priorValues)
+        self.currentNode = next(x for x in self.currentNode.children if x.actionID == move)
+        if self.isTraining:
+            self.nodeHistory.append(self.currentNode)
+        if not self.currentNode.expanded:
+            self.currentNode.expand(tree.policyModel)
+        return (self.currentNode.state, "bot action TODO: fix this text"), self.currentNode.actionID
+
+    def externalAction(self, player, move):
+        if player == self.currentNode.player:  # skip if action is already in tree
+            return
+        if not self.currentNode.expanded:
+            self.currentNode.expand(self.policyModel)
+        # TODO: thjis fucks up right here fix this
+        self.currentNode = next(x for x in self.currentNode.children if x.actionID == move)
+        if self.isTraining:
+            self.nodeHistory.append(self.currentNode)
+        if not self.currentNode.expanded:
+            self.currentNode.expand(self.policyModel)
+
+    def reportWin(self, winner):
+        print("aaaaa")
+        if not self.isTraining:
+            return
+        value = newnorpac.hotOne(scores.index(winner), 6)
+        for n in self.nodeHistory:
+            self.valueTraining.append((n.state.createInput(n.player), value))
+        self.nodeHistory.clear()
+
+    def newGame(self, game):
+        players = []
+        # players = [newnorpac.Player()] * random.randrange(3, 6+1)
+        for i in range(0, random.randrange(3, 6)):
+            players.append(newnorpac.Player())
+        self.tree.game = game
+        self.currentNode = Node(-1, self.tree.game.currentPlayer, -1, self.tree.game)
+        self.currentNode = self.tree.runSimulations(1, self.currentNode, self.valueModel, self.policyModel)
+        self.nodeHistory = [node]
+
+    def trainNetworks(self, n):
+        print(self.valueTraining)
+        print(self.policyTraining)
+        for i in range(0, n):
+            # TODO: add weighting
+            self.valueModel.train_(self.valueTraining)
+            self.policyModel.train_(self.policyTraining)
+
+
 class PolicyNetwork(torch.nn.Module):
-    def __init__(self, greedy=False, rand=False):
+    def __init__(self, criterion):
         super().__init__()
         self.flatten = torch.nn.Flatten()
         self.linear_relu_stack = torch.nn.Sequential(
@@ -128,16 +196,25 @@ class PolicyNetwork(torch.nn.Module):
             torch.nn.Linear(200, 100)
         )
 
-        self.greedy = greedy
-        self.random = rand
+        self.criterion = criterion
 
     def output(self, x):
         logits = self.linear_relu_stack(torch.tensor(x))
         return logits
 
+    def train_(self, trainingData):
+        data = random.choices(trainingData, k=round(len(trainingData) * 0.4))
+        batch = [list(it) for it in zip(*data)]
+        output = self.output(batch[0])
+        loss = self.criterion(output, torch.tensor(policyBatch[1]))
+        self.optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_value_(self.parameters(), 100)
+        self.optimizer.step()
+
 
 class ValueNetwork(torch.nn.Module):
-    def __init__(self, greedy=False, rand=False):
+    def __init__(self, criterion):
         super().__init__()
         self.flatten = torch.nn.Flatten()
         self.linear_relu_stack = torch.nn.Sequential(
@@ -148,139 +225,118 @@ class ValueNetwork(torch.nn.Module):
             torch.nn.Linear(100, 6)
         )
 
-        self.greedy = greedy
-        self.random = rand
+        self.criterion = criterion
 
     def output(self, x):
         logits = self.linear_relu_stack(torch.tensor(x))
         return logits
 
+    def train_(self, trainingData):
+        data = random.choices(trainingData, k=round(len(trainingData) * 0.4))
+        batch = [list(it) for it in zip(*data)]
+        output = self.output(batch[0])
+        loss = self.criterion(output, torch.tensor(valueBatch[1]))
+        self.optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_value_(self.parameters(), 100)
+        self.optimizer.step()
+
 
 def test():
     criterion = torch.nn.SmoothL1Loss()
-    valueNetwork = ValueNetwork()
-    policyNetwork = PolicyNetwork()
+
+    valueNetwork = ValueNetwork(criterion)
     valueOptimizer = optim.AdamW(valueNetwork.parameters(), lr=LEARN_RATE, amsgrad=True)
-    policyOptimizer = optim.AdamW(policyNetwork.parameters(), lr=LEARN_RATE, amsgrad=True)
-    players = [newnorpac.Player(), newnorpac.Player(), newnorpac.Player()]
-    tree = Tree(newnorpac.newGame(players), valueNetwork, policyNetwork)
-    policyTraining = collections.deque(maxlen=BUFFER_SIZE)
+    valueNetwork.optimizer = valueOptimizer
     valueTraining = collections.deque(maxlen=BUFFER_SIZE)
+
+    policyNetwork = PolicyNetwork(criterion)
+    policyOptimizer = optim.AdamW(policyNetwork.parameters(), lr=LEARN_RATE, amsgrad=True)
+    policyNetwork.optimizer = policyOptimizer
+    policyTraining = collections.deque(maxlen=BUFFER_SIZE)
 
     timestamp = datetime.now().strftime('%Y-%m-%d-%H%M%S')
 
-    for generation in range(0, 1):
+    # null game because of the dependency hell i've created with Tree
+    nullGame = newnorpac.newGame([newnorpac.Player(actors.RandomAI()), newnorpac.Player(actors.RandomAI()), newnorpac.Player(actors.RandomAI())])
+
+    trainingBot = MCTSBot(nullGame, policyNetwork, valueNetwork, True)
+    trainingPlayer = newnorpac.Player(trainingBot)
+
+    guaranteedActors = [
+        trainingBot
+    ]
+
+    actorsList = [
+        actors.RandomAI(),
+        actors.RandomAI(),
+        actors.RandomAI(),
+        actors.RandomAI(),
+        actors.RandomAI(),
+        actors.RandomAI(),
+    ]
+
+    for generation in range(0, NUM_GENS):
         botWins = 0
         games = 0
         print(f"Generation {generation}:")
-        for g in range(0, 3):
+
+        # TODO: self-play against previous versions
+        for g in range(0, GAMES_PER_GEN):
             games += 1
             players = []
-            # players = [newnorpac.Player()] * random.randrange(3, 6+1)
-            for i in range(0, random.randrange(3, 6)):
-                players.append(newnorpac.Player())
-            tree.game = newnorpac.newGame(players)
-            node = Node(-1, tree.game.currentPlayer, -1, tree.game)
-            node = tree.runSimulations(1, tree.game.currentPlayer, node)
-            originalRoot = node
-            nodeHistory = [node]
+            for i in range(0, random.randrange(3, 5)):
+                players.append(newnorpac.Player(actors.RandomAI()))
+            players.append(trainingPlayer)
 
-            _actingPlayer = random.choice(tree.game.players)
-            actingPlayerIndex = tree.game.players.index(_actingPlayer)
-            # print(f"\n\nacting player is {actingPlayerIndex}\n")
-            if generation == 0 or generation == 1:
-                print(f"game {g}...")
+            currentGame = newnorpac.newGame(players)
 
-            while not node.state.terminalState:
-                if not node.expanded:
-                    node.expand(tree.policyModel)
+            # _actingPlayer = random.choice(tree.game.players)
+            # actingPlayerIndex = tree.game.players.index(_actingPlayer)
 
-                if node.state.players.index(node.state.currentPlayer) == actingPlayerIndex:
-                    node = tree.runSimulations(NUM_SIM, tree.game.currentPlayer, node)
-                    tree.currentRoot = node
-                    priorDict = {}
-                    priorValues = []
-                    for child in node.children:
-                        priorDict[child.actionID] = child.visits
-                    for i in range(0, 100):
-                        priorValues.append(priorDict.get(i, 0))
-                    priorValues = [x / sum(priorValues) for x in priorValues]
-                    policyTraining.append((node.state.createInput(node.state.currentPlayer), priorValues))
-                    move = numpy.argmax(priorValues)
-                    if g == 0:
-                        print("BOT: " + newnorpac.readOutput(move))
-                    node = next(x for x in node.children if x.actionID == move)
-                    nodeHistory.append(node)
-                    if not node.expanded:
-                        node.expand(tree.policyModel)
-                else:
-                    # TODO: introduce more than fully random actors
-                    player = node.state.currentPlayer
-                    moves = node.state.allLegalMoves(player)
-                    move = random.choice(moves)
-                    if g == 0:
-                        print(F"Player {node.state.players.index(node.player)}: " + newnorpac.readOutput(move))
-                    if not node.expanded:
-                        node.expand(tree.policyModel)
-                    node = next(x for x in node.children if x.actionID == move) # , default_value)
-                    nodeHistory.append(node)
-                    if not node.expanded:
-                        node.expand(tree.policyModel)
+            # run game
+            while not currentGame.terminalState:
+                # neural network player
+                player = currentGame.currentPlayer
+                tuple1, moveNum = player.actor.doAction(player, currentGame)
+                currentGame, _ = tuple1
+                print(newnorpac.readOutput(moveNum))
+                print(player)
+                print(player.actor)
+                print()
+                for i in players:
+                    if hasattr(i.actor, 'externalAction'):
+                        i.actor.externalAction(player, moveNum)
 
-            scores = [(i, node.state.points.get(i, 0), node.state.badInvestments.get(i, 0), node.state.playerOrder.index(i)) for i in node.state.players]
+            # check winner
+            scores = [(i, currentGame.points.get(i, 0), currentGame.badInvestments.get(i, 0), currentGame.playerOrder.index(i)) for i in currentGame.players]
             scores.sort(key=lambda a: (
                 -a[1], a[2], a[3]))  # sort by points (descending) and bad investments (ascending)
             winner = scores[0]
-            if node.state.players.index(winner[0]) == actingPlayerIndex:
+            if winner[0] == trainingPlayer:
                 botWins += 1
-            value = newnorpac.hotOne(scores.index(winner), 6)
-            for n in nodeHistory:
-                valueTraining.append((n.state.createInput(n.player), value))
-            nodeHistory.clear()
+            for i in players:
+                if hasattr(i.actor, 'reportWin'):
+                    i.actor.reportWin(winner[0])
 
         print(f"Games done. Winrate: {(botWins/games)*100:.3f}%. Training...")
 
-        for i in range(0, 10):
-            # valueDist = random.choices(valueTraining, weights=tdErrors, k=round(len(valueTraining) * 0.4))
-            # TODO: add weighting
-            valueData = random.choices(valueTraining, k=round(len(valueTraining) * 0.4))
-            policyData = random.choices(policyTraining, k=round(len(policyTraining) * 0.4))
-
-            valueBatch = [list(it) for it in zip(*valueData)]
-            valueOutput = valueNetwork.output(valueBatch[0])#.gather(1, response.unsqueeze(0))
-
-            valueLoss = criterion(valueOutput, torch.tensor(valueBatch[1]))
-            # Optimize the model
-            valueOptimizer.zero_grad()
-            valueLoss.backward()
-            # In-place gradient clipping
-            torch.nn.utils.clip_grad_value_(valueNetwork.parameters(), 100)
-            valueOptimizer.step()
-            # print("---")
-            # print(valueLoss)
-            # print(criterion(valueNetwork.output(valueBatch[0]), torch.tensor(valueBatch[1])))
-            # print("---\n")
-
-            # policy time
-            policyBatch = [list(it) for it in zip(*policyData)]
-            policyOutput = policyNetwork.output(policyBatch[0])
-            policyLoss = criterion(policyOutput, torch.tensor(policyBatch[1]))
-            policyOptimizer.zero_grad()
-            policyLoss.backward()
-            torch.nn.utils.clip_grad_value_(policyNetwork.parameters(), 100)
-            policyOptimizer.step()
+        # training policy & value networks
+        trainingBot.trainNetworks(10)
+        # TODO: also train rainbow dqn along with this for benchmark
 
         if generation % 10 == 0 and generation != 0:
             timestamp = datetime.now().strftime('%Y-%m-%d-%H%M%S')
             filename = f"checkpoints/{timestamp}-mcts-{generation}.pkl"
             with open(os.path.join(checkpointsDir, filename), "wb") as f:
                 torch.save(actingNetwork, f)
-            filename = f"{timestamp}-mcts-{generation}-trainingdata.pkl"
-            with open(os.path.join(checkpointsDir, filename), "wb") as f:
-                pickle.dump((policyData, valueData), f)
             print(f"Generation done. Saved generation to {filename}.")
         else:
             print(f"Generation done.")
+
+        filename = f"{timestamp}-mcts-{generation}-trainingdata.pkl"
+        with open(os.path.join(checkpointsDir, filename), "wb") as f:
+            pickle.dump((policyData, valueData), f)
 
         print("Full average loss over training data:")
         valueBatch = [list(it) for it in zip(*valueTraining)]
@@ -292,10 +348,11 @@ def test():
         policyLoss = criterion(policyOutput, torch.tensor(policyBatch[1]))
         print(f"Policy: {policyLoss}")
 
-    filename = f"{timestamp}-mcts-{generation}-policy.pkl"
+    # at the end
+    filename = f"{timestamp}-mcts-final-policy.pkl"
     with open(os.path.join(checkpointsDir, filename), "wb") as f:
         torch.save(policyNetwork, f)
-    filename = f"{timestamp}-mcts-{generation}-value.pkl"
+    filename = f"{timestamp}-mcts-final-value.pkl"
     with open(os.path.join(checkpointsDir, filename), "wb") as f:
         torch.save(valueNetwork, f)
 

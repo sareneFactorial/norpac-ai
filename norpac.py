@@ -1,4 +1,5 @@
 import random
+import copy
 
 from util import hotOne
 
@@ -58,6 +59,14 @@ class NorpacGame:
         self.currentPlayer = None
         self.lastScore = {}
 
+    # def __deepcopy__(self, memodict={}):
+    #     newGame = NorpacGame()
+    #     newGame.trains = copy.copy(self.trains)
+    #     newGame.cities = copy.copy(self.cities)
+    #     newGame.currentCity = self.currentCity
+    #     newGame.reachedCities = copy.copy(self.reachedCities)
+    #     newGame.players = copy.deepcopy(self.)
+
     def findCity(self, name: str):
         for i in self.cities:
             if i.name == name:
@@ -69,6 +78,12 @@ class NorpacGame:
             if i.nn == nn:
                 return i
         return None
+
+    def advancePlayer(self):
+        self.currentPlayer = self.playerOrder[(self.playerOrder.index(self.currentPlayer) + 1) % len(self.playerOrder)]
+
+    def getNextPlayer(self):
+        return self.playerOrder[(self.playerOrder.index(self.currentPlayer) + 1) % len(self.playerOrder)]
 
     def addCube(self, city: str, player, big: bool):
         realCity = self.findCity(city)
@@ -194,6 +209,7 @@ class NorpacGame:
                 if self.currentCity.name == seattleConnections[n][0]:
                     legalMoves.append(i)
                     continue
+        return legalMoves
 
     # see action numbers at bottom of this file
     def doAction(self, player, actionNumber, extraText=""):
@@ -291,6 +307,8 @@ class NorpacGame:
             raise Exception("input length is messed up idk why")
         return a
 
+
+
 class City:
     def __init__(self, game: NorpacGame, name: str, connections, size: int):
         self.game = game
@@ -349,6 +367,25 @@ class Cube:
     def __init__(self, owner: Player, big: bool):
         self.owner = owner
         self.big = big
+
+def readOutput(n):
+    if n < 50:
+        conn = allConnections[n]
+        return f"Conn {conn[0]} to {conn[1]}"
+    elif n < 96:
+        j = (n - 50) // 2
+        city = cityIndices[j - 1]
+        st = ""
+        if n % 2 == 1:  # if odd i.e. big cube
+            st += "Big "
+        else:
+            st += "Small "
+        st += f"cube on {city}"
+        return st
+    else:
+        n = n - 96
+        return f"Connect {seattleConnections[n][0]} to Seattle!!!"
+
 
 # ACTION NUMBERS
 
