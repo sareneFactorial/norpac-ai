@@ -1,4 +1,5 @@
 # norpac.py but immutable this time
+import functools
 from dataclasses import dataclass
 from typing import Self
 import copy
@@ -80,7 +81,7 @@ class CityEnum(Enum):
     Minneapolis = 24
 
 
-@dataclass
+@dataclass(frozen=True)
 class City:
     name: str
     connections: list[str]
@@ -119,7 +120,6 @@ CITIES = [  # TODO: optimize this to remove string comparison
 ]
 
 
-# @dataclass
 class Player:
     # TODO: implement Actor
     def __init__(self, actor=None):
@@ -137,7 +137,7 @@ class Cube:
     big: bool
 
 
-@dataclass
+@dataclass(frozen=True)
 class NorpacGame:
     players: list[Player]
     playerOrder: list[Player]
@@ -153,7 +153,6 @@ class NorpacGame:
 
     cityCubesCache = [None] * 25
     inputCache = {}
-
 
     def newState(self, **kwargs) -> Self:
         players = kwargs.get("players", self.players)
@@ -184,7 +183,7 @@ class NorpacGame:
         return NorpacGame(players, playerOrder, points, badInvestments, playerCubes, placedCubes, trains, roundNumber,
                           currentPlayer)
 
-    @property
+    @cached_property
     def maxCubes(self):
         if len(self.players) == 3:
             return 2
@@ -226,9 +225,14 @@ class NorpacGame:
     def smallCubes(self, player: Player):
         return self.playerCubes[player][0]
 
+    # @functools.lru_cache(maxsize=100, typed=False)
     def allLegalMoves(self, player: Player):  # TODO: optimize this, most time is spent in this function somehow
+        # check cache
+
         legalMoves = []
         for i in range(0, 100):
+            if 50 <= i <= 53:
+                continue
             if i < 50:
                 if self.currentCity == allConnections[i][0]:
                     if (allConnections[i][1], allConnections[i][0]) in self.trains:  # if double connection taken
@@ -243,8 +247,6 @@ class NorpacGame:
                 if self.playerCubes[player][0] + self.playerCubes[player][1] == 0:  # if ai have no cube :(
                     continue
                 if city.name in self.reachedCities:  # city connected to!! already
-                    continue
-                if city.name == "Seattle" or city.name == "Minneapolis":  # whoops
                     continue
 
                 if i % 2 == 1:  # if odd i.e. big cube
