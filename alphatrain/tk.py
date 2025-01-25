@@ -7,6 +7,15 @@ import sv_ttk
 # checkpointsDir = os.path.join(os.path.dirname(__file__), "checkpoints/")
 
 
+# new ui plans.. 
+
+# training page:
+# initial screen: New and Load...
+# if new, it asks for a type of network to create
+# if load, it determines the type of the serialized object
+# either way it takes you to a type-specific parameters page
+
+
 class TrainingUI:
     def __init__(self, root):
         self.learnRate = StringVar(value="6e-5")
@@ -39,8 +48,10 @@ class TrainingUI:
         self.trainingPage(self.trainingFrame)
 
     def trainingPage(self, f):
-        t = Text(f, width=40, height=10)
-        t.grid(row=0, column=0, rowspan=3, sticky="news", padx=5, pady=5)
+        # t = Text(f, width=40, height=10)
+        # t.grid(row=0, column=0, rowspan=3, sticky="news", padx=5, pady=5)
+        t = TestWidget(f)
+        t.grid(row=0, column=0, rowspan=3, sticky="news")
 
 
         frame = ttk.Frame(f)
@@ -96,7 +107,11 @@ class TrainingUI:
         l = ttk.Label(frame, text=text)
         l.grid(row=row, column=column, sticky=W)
 
-
+class TestWidget(ttk.Frame):
+    def __init__(self, parent):
+        ttk.Frame.__init__(self, parent)
+        t = Text(self, width=40, height=20)
+        t.grid(column=0, row=0, sticky=(N, W, E, S))
 
 if __name__ == '__main__':
     window = Tk()

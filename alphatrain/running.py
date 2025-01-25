@@ -8,7 +8,7 @@ from torch import optim as optim
 
 import newnorpac
 from alphatrain import actors
-from alphatrain.main import LEARN_RATE, NUM_GENS, GAMES_PER_GEN, checkpointsDir
+from alphatrain.tk import LEARN_RATE, NUM_GENS, GAMES_PER_GEN, checkpointsDir
 from alphatrain.mcts import ValueNetwork, PolicyNetwork, MCTSBot
 
 

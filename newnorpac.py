@@ -227,6 +227,7 @@ class NorpacGame:
 
     # @functools.lru_cache(maxsize=100, typed=False)
     def allLegalMoves(self, player: Player):  # TODO: optimize this, most time is spent in this function somehow
+        # TODO: optimization idea: skip half the numbers by looking at connections from current place and calculating number of them?
         # check cache
 
         legalMoves = []
